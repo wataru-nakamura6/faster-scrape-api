@@ -3,53 +3,70 @@ const express = require('express');
 const puppeteer = require('puppeteer');
 const axios = require('axios');
 const bodyParser = require('body-parser');
+const FormData = require('form-data');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-(async () => {
-  const url = process.argv[2]; // 引数でURL受け取り
-  if (!url) return console.log("URLが指定されていません");
+const logger = require('./logger');
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    executablePath: '/home/ec2-user/chromium/chrome/chrome',
-  });
-  const page = await browser.newPage();
-  await page.goto(url, { waitUntil: 'networkidle2' });
+app.use(bodyParser.json());
 
-  const images = await page.$$eval('img', imgs => {
-    const srcs = imgs
-      .map(img => img.src)
-      .filter(src => src.startsWith('http'));
+app.post('/scrape', async (req, res) => {
+  const url = req.body.url;
+  if (!url) return res.status(400).json({error: 'URLが指定されていません'});
 
-    return Array.from(new Set(srcs));
-  });
+  try {
+    const browser = await puppeteer.launch({
+      headless: true,
+      executablePath: '/home/ec2-user/chromium/chrome/chrome',
+    });
 
-  console.log(images)
+    const page = await browser.newPage();
+    await page.goto(url, {waitUntil: 'networkidle2'});
 
-  // for (const src of [...new Set(images)]) {
-  //   try {
-  //     const response = await axios.get(src, { responseType: 'arraybuffer' });
-  //     if (response.data.length < 500 * 1024) continue; // 500KB 未満はスキップ
-  //
-  //     // Cloudflare へPOST
-  //     await axios.post(
-  //       `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/images/v1`,
-  //       response.data,
-  //       {
-  //         headers: {
-  //           Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
-  //           'Content-Type': 'image/jpeg'
-  //         }
-  //       }
-  //     );
-  //
-  //     console.log(`✅ ${src} uploaded`);
-  //   } catch (err) {
-  //     console.error(`❌ Error uploading ${src}: ${err.message}`);
-  //   }
-  // }
+    const images = await page.$$eval('img', imgs => {
+      const srcs = imgs
+        .map(img => img.src)
+        .filter(src => src.startsWith('http'));
+      return Array.from(new Set(srcs));
+    });
 
-  await browser.close();
-})();
+    let uploaded = [];
+
+    for (const src of images) {
+      try {
+        const response = await axios.get(src, {responseType: 'arraybuffer'});
+
+        // サイズ制限（500KB以上）
+        // if (response.data.length < 500 * 1024) continue;
+
+        const form = new FormData();
+        form.append('file', Buffer.from(response.data), 'image');
+
+        const uploadRes = await axios.post(
+          `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/images/v1`,
+          form,
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+              ...form.getHeaders(),
+            },
+          }
+        );
+
+        uploaded.push({src, result: uploadRes.data});
+      } catch (err) {
+        logger.error(`❌ アップロード中にエラーが発生しました ${src}: ${err.message}`);
+      }
+    }
+
+    await browser.close();
+    return res.json({uploaded});
+  } catch (err) {
+    logger.error(`❌ スクレイピング中にエラーが発生しました ${src}: ${err}`);
+    return res.status(500).json({error: 'スクレイピング中にエラーが発生しました'});
+  }
+});
+
+app.listen(PORT, '0.0.0.0');
