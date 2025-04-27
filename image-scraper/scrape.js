@@ -18,6 +18,7 @@ const logger = require('./logger');
 app.use(bodyParser.json());
 
 app.post('/scrape', async (request, res) => {
+  // TODO: 画像の重複登録を避ける処理
   const url = request.body.url;
   if (!url) return res.status(400).json({error: 'URLが指定されていません'});
 
@@ -45,8 +46,8 @@ app.post('/scrape', async (request, res) => {
       return Array.from(new Set(srcs));
     });
 
-    let uploaded = [];
     let i = 0;
+    let responseData = [];
 
     for (const src of images) {
       try {
@@ -73,16 +74,19 @@ app.post('/scrape', async (request, res) => {
               },
             }
           );
-
-          uploaded.push({src, result: uploadRes.data});
+          responseData.push({'url': src, 'image_id': uploadRes.data.result.id})
         }
       } catch (err) {
         logger.error(`❌ アップロード中にエラーが発生しました ${src}: ${err.message}`);
       }
     }
 
+    // ブラウザの終了
     await browser.close();
-    return res.json(images);
+
+    // DynamoDB登録用レスポンスデータ
+    return res.json(responseData);
+
   } catch (err) {
     logger.error(`❌ スクレイピング中にエラーが発生しました ${src}: ${err}`);
     return res.status(500).json({error: 'スクレイピング中にエラーが発生しました'});

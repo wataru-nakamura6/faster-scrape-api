@@ -44,7 +44,6 @@ const logger = require('./logger');
         const response = await axios.get(src, {responseType: 'arraybuffer'});
         const match = src.match(/\/([^\/]+)\.\w+$/);
         let name = match ? match[1] : 'image';
-        console.log('取得した文字列:', name);
 
         // サイズ制限（500KB以上）
         // if (response.data.length < 500 * 1024) continue;
@@ -62,6 +61,10 @@ const logger = require('./logger');
           }
         );
 
+        // イメージID
+        console.log(uploadRes.data.result.id)
+        // 画像のソース
+        console.log(src)
         uploaded.push({src, result: uploadRes.data});
       }
       i++;
