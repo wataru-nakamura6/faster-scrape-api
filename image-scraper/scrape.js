@@ -20,6 +20,7 @@ app.use(bodyParser.json());
 app.post('/scrape', async (request, res) => {
   // TODO: 画像の重複登録を避ける処理
   const url = request.body.url;
+  const site_id = request.body.site_id;
   if (!url) return res.status(400).json({error: 'URLが指定されていません'});
 
   try {
@@ -74,7 +75,7 @@ app.post('/scrape', async (request, res) => {
               },
             }
           );
-          responseData.push({'url': src, 'image_id': uploadRes.data.result.id})
+          responseData.push({'site_id': site_id, 'image_url': src, 'image_id': uploadRes.data.result.id})
         }
       } catch (err) {
         logger.error(`❌ アップロード中にエラーが発生しました ${src}: ${err.message}`);
